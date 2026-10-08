@@ -53,19 +53,35 @@ export default function Profile() {
     }
   };
 
-  const sendLocation=()=>{
-    if(!navigator.geolocation){setMsg("Geolocation is not supported.");return;}
-    navigator.geolocation.getCurrentPosition(async({coords})=>{
-      const coordinates=[coords.longitude,coords.latitude];
+  const sendLocation = () => {
+  if (!navigator.geolocation) {
+    setMsg("Geolocation is not supported.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async ({ coords }) => {
+      const lng = coords.longitude;
+      const lat = coords.latitude;
+
       try {
-        const {data}=await api.patch("/mechanics/location",{coordinates});
-        setLocation(data.profile?.location?.coordinates || coordinates);
+        const { data } = await api.patch("/mechanics/location", {
+          lng,
+          lat,
+        });
+
+        setLocation(data.location?.coordinates || [lng, lat]);
         setMsg("Current location updated.");
-      } catch(e) {
-        setMsg(e.response?.data?.message||"Could not update location.");
+      } catch (e) {
+        setMsg(
+          e.response?.data?.message ||
+          "Could not update location."
+        );
       }
-    },()=>setMsg("Please allow location access."));
-  };
+    },
+    () => setMsg("Please allow location access.")
+  );
+};
 
   const skills=["battery","puncture","fuel","lockout","engine","electrical","accident","general"];
 

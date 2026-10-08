@@ -14,17 +14,31 @@ export default function EmergencyRequests(){
     setItems(prev=>prev.some(x=>x._id===request._id)?prev: [request,...prev]);
   };
 
-  useEffect(()=>{
-    if(!socket)return;
-    const onNew=(payload)=>{
-      // The original backend emits emergency:new. Payload may be the request
-      // itself or an object containing { request }.
-      addRequest(payload?.request || payload);
-      setMessage("New emergency request received.");
+  useEffect(() => {
+  if (!socket) return;
+  const onNew = (payload) => {
+    console.log("Emergency received from backend:", payload);
+    const request = {
+      ...(payload?.request || payload),
+      _id:
+        payload?.request?._id ||
+        payload?.request?.requestId ||
+        payload?._id ||
+        payload?.requestId,
     };
-    socket.on("emergency:new",onNew);
-    return()=>socket.off("emergency:new",onNew);
-  },[socket]);
+    console.log("✅ Normalized request:", request);
+    if (!request._id) {
+      console.log("❌ Request ID missing:", payload);
+      return;
+    }
+    addRequest(request);
+    setMessage("New emergency request received.");
+  };
+  socket.on("emergency:new", onNew);
+  return () => {
+    socket.off("emergency:new", onNew);
+  };
+}, [socket]);
 
   const refresh=()=>{
     setMessage(

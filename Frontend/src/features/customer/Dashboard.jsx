@@ -1,0 +1,13 @@
+import { CarFront, CircleDollarSign, Clock3, MapPin, Plus, Siren } from "lucide-react";
+import { Link } from "react-router-dom";
+import StatCard from "../../Components/StatCard";
+import { useAuth } from "../../context/AuthContext";
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  return <div className="mx-auto max-w-7xl">
+    <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><p className="text-sm text-slate-500">Customer dashboard</p><h1 className="mt-1 text-3xl font-black">Good to see you, {user?.name?.split(" ")[0]} 👋</h1><p className="mt-2 text-slate-500">Everything you need for your next roadside emergency.</p></div><Link to="/customer/emergency" className="btn-primary"><Siren size={18}/>Request Emergency Help</Link></div>
+    <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><StatCard icon={Clock3} label="Active requests" value="0" note="No active breakdowns"/><StatCard icon={CarFront} label="My vehicles" value="0" note="Add your vehicles"/><StatCard icon={CircleDollarSign} label="Total spent" value="₹0" note="This month"/><StatCard icon={MapPin} label="Saved locations" value="0" note="Quick access"/></div>
+    <div className="mt-7 grid gap-6 lg:grid-cols-3"><div className="card p-6 lg:col-span-2"><div className="flex items-center justify-between"><h2 className="text-lg font-bold">Quick actions</h2><Link to="/customer/vehicles" className="text-sm font-semibold text-red-600">Manage vehicles</Link></div><div className="mt-5 grid gap-4 sm:grid-cols-2"><Link to="/customer/emergency" className="rounded-2xl bg-red-50 p-5 transition hover:bg-red-100"><Siren className="text-red-600"/><h3 className="mt-4 font-bold">Need emergency help?</h3><p className="mt-1 text-sm text-slate-500">Tell us the problem and get matched nearby.</p></Link><Link to="/customer/mechanics" className="rounded-2xl bg-slate-50 p-5 transition hover:bg-slate-100"><MapPin className="text-slate-700"/><h3 className="mt-4 font-bold">Find mechanics</h3><p className="mt-1 text-sm text-slate-500">Browse verified providers around you.</p></Link></div></div><div className="card p-6"><h2 className="font-bold">Your vehicles</h2><div className="mt-8 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-slate-100"><CarFront/></div><p className="mt-4 text-sm text-slate-500">No vehicles added yet.</p><Link to="/customer/vehicles" className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-red-600"><Plus size={16}/>Add vehicle</Link></div></div></div>
+  </div>;
+}

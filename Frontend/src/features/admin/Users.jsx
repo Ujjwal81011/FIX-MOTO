@@ -1,0 +1,5 @@
+import { useEffect, useState } from "react";
+import { UserRound } from "lucide-react";
+import api from "../../utils/axios";
+
+export default function Users(){const [users,setUsers]=useState([]);useEffect(()=>{api.get("/users").then(r=>setUsers(r.data.users||[])).catch(()=>{})},[]);return <div className="mx-auto max-w-6xl"><h1 className="text-3xl font-black">Users</h1><p className="mt-2 text-slate-500">Registered FIX MOTO accounts.</p><div className="mt-7 overflow-hidden rounded-2xl border bg-white">{users.length?<div className="divide-y">{users.map(u=><div className="flex items-center gap-4 p-5" key={u._id}><div className="grid h-10 w-10 place-items-center rounded-full bg-slate-100"><UserRound size={18}/></div><div className="flex-1"><p className="font-semibold">{u.name}</p><p className="text-sm text-slate-500">{u.email}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs capitalize">{u.role}</span></div>)}</div>:<div className="p-12 text-center text-sm text-slate-500">No users loaded. Make sure your admin token and /users route are configured.</div>}</div></div>}

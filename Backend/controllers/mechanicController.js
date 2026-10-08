@@ -1,42 +1,298 @@
 const MechanicProfile = require('../models/MechanicProfile');
-
 async function createOrUpdateProfile(req, res) {
-  if (req.user.role !== 'mechanic') return res.status(403).json({ success: false, message: 'Mechanic account required' });
-  const profile = await MechanicProfile.findOneAndUpdate({ user: req.user._id }, { ...req.body, user: req.user._id }, { new: true, upsert: true, runValidators: true });
-  res.json({ success: true, message: 'Mechanic profile saved', profile });
+  try {
+    if (req.user.role !== 'mechanic') {
+      return res.status(403).json({
+        success: false,
+        message: 'Mechanic account required',
+      });
+    }
+    // Security:
+    const {
+      isVerified,
+      user,
+      ...profileData
+    } = req.body;
+    const profile = await MechanicProfile.findOneAndUpdate(
+      { user: req.user._id },
+      {
+        ...profileData,
+        user: req.user._id,
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Mechanic profile saved',
+      profile,
+    });
+  } catch (error) {
+    console.error('createOrUpdateProfile error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save mechanic profile',
+    });
+  }
 }
 
 async function getMyProfile(req, res) {
-  const profile = await MechanicProfile.findOne({ user: req.user._id }).populate('user', 'name email phone role');
-  if (!profile) return res.status(404).json({ success: false, message: 'Mechanic profile not found' });
-  res.json({ success: true, profile });
+  try {
+    const profile = await MechanicProfile.findOne({
+      user: req.user._id,
+    }).populate('user', 'name email phone role');
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mechanic profile not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      profile,
+    });
+  } catch (error) {
+    console.error('getMyProfile error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch mechanic profile',
+    });
+  }
 }
 
 async function getNearbyMechanics(req, res) {
-  const lng = Number(req.query.lng);
-  const lat = Number(req.query.lat);
-  const maxDistance = Number(req.query.maxDistance || 10000);
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return res.status(400).json({ success: false, message: 'lng and lat query parameters are required' });
+  try {
+    const lng = Number(req.query.lng);
+    const lat = Number(req.query.lat);
+    const maxDistance = Number(req.query.maxDistance || 10000);
 
-  const mechanics = await MechanicProfile.find({ isOnline: true, isVerified: true, location: { $near: { $geometry: { type: 'Point', coordinates: [lng, lat] }, $maxDistance: maxDistance } } }).populate('user', 'name email phone');
-  res.json({ success: true, count: mechanics.length, mechanics });
+    if (
+      !Number.isFinite(lng) ||
+      !Number.isFinite(lat)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'lng and lat query parameters are required',
+      });
+    }
+
+    if (
+      lng < -180 ||
+      lng > 180 ||
+      lat < -90 ||
+      lat > 90
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid latitude or longitude',
+      });
+    }
+
+    const mechanics = await MechanicProfile.find({
+      isOnline: true,
+      isVerified: true,
+
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [lng, lat],
+          },
+          $maxDistance: maxDistance,
+        },
+      },
+    })
+      .populate('user', 'name email phone')
+      .sort({ rating: -1 });
+
+    res.json({
+      success: true,
+      count: mechanics.length,
+      mechanics,
+    });
+  } catch (error) {
+    console.error('getNearbyMechanics error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to find nearby mechanics',
+    });
+  }
 }
 
 async function updateStatus(req, res) {
-  const profile = await MechanicProfile.findOneAndUpdate({ user: req.user._id }, { isOnline: Boolean(req.body.isOnline) }, { new: true, upsert: true, setDefaultsOnInsert: true });
-  res.json({ success: true, isOnline: profile.isOnline });
+  try {
+    const isOnline = Boolean(req.body.isOnline);
+
+    const profile = await MechanicProfile.findOneAndUpdate(
+      {
+        user: req.user._id,
+      },
+      {
+        isOnline,
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    res.json({
+      success: true,
+      isOnline: profile.isOnline,
+    });
+  } catch (error) {
+    console.error('updateStatus error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update mechanic status',
+    });
+  }
 }
 
 async function updateLocation(req, res) {
-  const { lng, lat } = req.body;
-  if (!Number.isFinite(Number(lng)) || !Number.isFinite(Number(lat))) return res.status(400).json({ success: false, message: 'lng and lat are required' });
-  const profile = await MechanicProfile.findOneAndUpdate({ user: req.user._id }, { location: { type: 'Point', coordinates: [Number(lng), Number(lat)] } }, { new: true, upsert: true });
-  res.json({ success: true, location: profile.location });
+  try {
+    const { lng, lat } = req.body;
+
+    const longitude = Number(lng);
+    const latitude = Number(lat);
+
+    if (
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(latitude)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'lng and lat are required',
+      });
+    }
+
+    if (
+      longitude < -180 ||
+      longitude > 180 ||
+      latitude < -90 ||
+      latitude > 90
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid latitude or longitude',
+      });
+    }
+
+    const profile = await MechanicProfile.findOneAndUpdate(
+      {
+        user: req.user._id,
+      },
+      {
+        location: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    res.json({
+      success: true,
+      location: profile.location,
+    });
+  } catch (error) {
+    console.error('updateLocation error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update mechanic location',
+    });
+  }
 }
 
 async function listMechanics(req, res) {
-  const mechanics = await MechanicProfile.find().populate('user', 'name email phone').sort({ rating: -1 });
-  res.json({ success: true, count: mechanics.length, mechanics });
+  try {
+    const mechanics = await MechanicProfile.find()
+      .populate('user', 'name email phone role')
+      .sort({ rating: -1 });
+
+    res.json({
+      success: true,
+      count: mechanics.length,
+      mechanics,
+    });
+  } catch (error) {
+    console.error('listMechanics error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch mechanics',
+    });
+  }
 }
 
-module.exports = { createOrUpdateProfile, getMyProfile, getNearbyMechanics, updateStatus, updateLocation, listMechanics };
+async function verifyMechanic(req, res) {
+  try {
+    // Only admin can verify a mechanic
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required',
+      });
+    }
+
+    const { id } = req.params;
+
+    const profile = await MechanicProfile.findByIdAndUpdate(
+      id,
+      {
+        isVerified: true,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate('user', 'name email phone role');
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mechanic profile not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Mechanic verified successfully',
+      profile,
+    });
+  } catch (error) {
+    console.error('verifyMechanic error:', error);
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to verify mechanic',
+    });
+  }
+}
+
+module.exports = {
+  createOrUpdateProfile,
+  getMyProfile,
+  getNearbyMechanics,
+  updateStatus,
+  updateLocation,
+  listMechanics,
+  verifyMechanic,
+};

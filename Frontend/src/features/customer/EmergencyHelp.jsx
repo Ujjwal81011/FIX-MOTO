@@ -3,7 +3,7 @@ import { MapPin, Siren, Wrench, Zap, CarFront, CheckCircle2 } from "lucide-react
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../utils/axios";
 
-const problems = [["battery","Battery"],["puncture","Puncture"],["fuel","Fuel"],["lockout","Lockout"],["engine","Engine"],["electrical","Electrical"],["accident","Accident"],["general","General Breakdown"]];
+const problems = [["battery","Battery"],["puncture","Puncture"],["fuel","Fuel"],["lockout","Lockout"],["engine","Engine"],["electrical","Electrical"],["accident","Accident"],["breakdown","General Breakdown"]];
 
 export default function EmergencyHelp() {
   const navigate = useNavigate();

@@ -1,8 +1,12 @@
-const EmergencyRequest = require('../models/EmergencyRequest');
-const MechanicProfile = require('../models/MechanicProfile');
-const Notification = require('../models/Notification');
+const EmergencyRequest = require("../models/EmergencyRequest");
+const MechanicProfile = require("../models/MechanicProfile");
+const Notification = require("../models/Notification");
 
 const EMERGENCY_RADIUS_METERS = 20000;
+
+// ======================================================
+// SOCKET HELPER
+// ======================================================
 
 function emitToMechanics(io, mechanics, event, payload) {
   if (!io) return;
@@ -13,6 +17,10 @@ function emitToMechanics(io, mechanics, event, payload) {
     }
   });
 }
+
+// ======================================================
+// CREATE EMERGENCY REQUEST
+// ======================================================
 
 async function createEmergency(req, res) {
   const {
@@ -32,7 +40,8 @@ async function createEmergency(req, res) {
   ) {
     return res.status(400).json({
       success: false,
-      message: 'vehicle, issueType and [lng, lat] coordinates are required',
+      message:
+        "vehicle, issueType and [lng, lat] coordinates are required",
     });
   }
 
@@ -49,7 +58,16 @@ async function createEmergency(req, res) {
   ) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid latitude or longitude',
+      message: "Invalid latitude or longitude",
+    });
+  }
+
+  const initialEstimate = Number(estimatedAmount || 0);
+
+  if (!Number.isFinite(initialEstimate) || initialEstimate < 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid estimated amount",
     });
   }
 
@@ -59,25 +77,25 @@ async function createEmergency(req, res) {
     issueType,
     description,
     location: {
-      type: 'Point',
+      type: "Point",
       coordinates: [lng, lat],
       address,
     },
-    estimatedAmount: Number(estimatedAmount || 0),
+    estimatedAmount: initialEstimate,
   });
 
   const populated = await EmergencyRequest.findById(request._id)
-    .populate('vehicle')
-    .populate('customer', 'name phone');
+    .populate("vehicle")
+    .populate("customer", "name phone");
 
-  // Only online + verified mechanics near the customer are notified.
+  // Find nearby online and verified mechanics.
   const mechanics = await MechanicProfile.find({
     isOnline: true,
     isVerified: true,
     location: {
       $near: {
         $geometry: {
-          type: 'Point',
+          type: "Point",
           coordinates: [lng, lat],
         },
         $maxDistance: EMERGENCY_RADIUS_METERS,
@@ -85,24 +103,23 @@ async function createEmergency(req, res) {
     },
   })
     .limit(10)
-    .select('user');
+    .select("user");
 
   if (mechanics.length) {
     await Notification.insertMany(
       mechanics.map((mechanic) => ({
         user: mechanic.user,
-        title: 'New emergency request',
+        title: "New emergency request",
         message: `New ${issueType} request nearby`,
-        type: 'emergency',
+        type: "emergency",
         data: { requestId: request._id },
       }))
     );
 
-    // Complete request is sent only to eligible mechanics.
     emitToMechanics(
-      req.app.get('io'),
+      req.app.get("io"),
       mechanics,
-      'emergency:new',
+      "emergency:new",
       populated
     );
   }
@@ -111,57 +128,54 @@ async function createEmergency(req, res) {
     success: true,
     message:
       mechanics.length > 0
-        ? 'Emergency request created. Nearby mechanics have been notified.'
-        : 'Emergency request created. No nearby online verified mechanic was found.',
+        ? "Emergency request created. Nearby mechanics have been notified."
+        : "Emergency request created. No nearby online verified mechanic was found.",
     request: populated,
     nearbyMechanicsNotified: mechanics.length,
   });
 }
 
-
 // ======================================================
-// GET ACTIVE / AVAILABLE EMERGENCY REQUESTS
+// GET AVAILABLE EMERGENCY REQUESTS
 // ======================================================
 
 async function getAvailableRequests(req, res) {
-  if (req.user.role !== 'mechanic') {
+  if (req.user.role !== "mechanic") {
     return res.status(403).json({
       success: false,
-      message: 'Mechanic account required',
+      message: "Mechanic account required",
     });
   }
 
   const profile = await MechanicProfile.findOne({
     user: req.user._id,
-  }).select('isOnline isVerified location');
+  }).select("isOnline isVerified location");
 
   if (!profile) {
     return res.status(404).json({
       success: false,
       message:
-        'Mechanic profile not found. Complete your mechanic profile first.',
+        "Mechanic profile not found. Complete your mechanic profile first.",
     });
   }
 
-  // Offline mechanic should not receive active emergency jobs.
   if (!profile.isOnline) {
     return res.json({
       success: true,
       count: 0,
       requests: [],
       message:
-        'Go Online from your mechanic profile to receive emergency requests.',
+        "Go Online from your mechanic profile to receive emergency requests.",
     });
   }
 
-  // Only verified mechanics can receive requests.
   if (!profile.isVerified) {
     return res.json({
       success: true,
       count: 0,
       requests: [],
       message:
-        'Your mechanic profile must be verified by an admin to receive emergency requests.',
+        "Your mechanic profile must be verified by an admin to receive emergency requests.",
     });
   }
 
@@ -174,16 +188,15 @@ async function getAvailableRequests(req, res) {
     !(Number(coordinates[0]) === 0 && Number(coordinates[1]) === 0);
 
   const query = {
-    status: 'requested',
+    status: "requested",
     mechanic: null,
   };
 
-  // If mechanic has a valid location, only show nearby requests.
   if (hasValidLocation) {
     query.location = {
       $near: {
         $geometry: {
-          type: 'Point',
+          type: "Point",
           coordinates: [
             Number(coordinates[0]),
             Number(coordinates[1]),
@@ -195,12 +208,10 @@ async function getAvailableRequests(req, res) {
   }
 
   let requestsQuery = EmergencyRequest.find(query)
-    .populate('customer', 'name phone')
-    .populate('vehicle')
+    .populate("customer", "name phone")
+    .populate("vehicle")
     .limit(50);
 
-  // $near already sorts by distance.
-  // Only sort by creation time when location matching is not used.
   if (!hasValidLocation) {
     requestsQuery = requestsQuery.sort({ createdAt: -1 });
   }
@@ -213,10 +224,9 @@ async function getAvailableRequests(req, res) {
     requests,
     message: hasValidLocation
       ? undefined
-      : 'No mechanic location is saved. Showing active requests; update your location for nearby matching.',
+      : "No mechanic location is saved. Showing active requests; update your location for nearby matching.",
   });
 }
-
 
 // ======================================================
 // CUSTOMER REQUESTS
@@ -226,8 +236,8 @@ async function getMyRequests(req, res) {
   const requests = await EmergencyRequest.find({
     customer: req.user._id,
   })
-    .populate('vehicle')
-    .populate('mechanic', 'name phone')
+    .populate("vehicle")
+    .populate("mechanic", "name phone")
     .sort({ createdAt: -1 });
 
   return res.json({
@@ -237,6 +247,32 @@ async function getMyRequests(req, res) {
   });
 }
 
+// ======================================================
+// MECHANIC - COMPLETED JOB HISTORY
+// ======================================================
+
+async function getMyCompletedJobs(req, res) {
+  if (req.user.role !== "mechanic") {
+    return res.status(403).json({
+      success: false,
+      message: "Mechanic account required",
+    });
+  }
+
+  const requests = await EmergencyRequest.find({
+    mechanic: req.user._id,
+    status: "completed",
+  })
+    .populate("customer", "name phone")
+    .populate("vehicle")
+    .sort({ completedAt: -1, updatedAt: -1 });
+
+  return res.json({
+    success: true,
+    count: requests.length,
+    requests,
+  });
+}
 
 // ======================================================
 // GET SINGLE REQUEST
@@ -244,14 +280,14 @@ async function getMyRequests(req, res) {
 
 async function getRequest(req, res) {
   const request = await EmergencyRequest.findById(req.params.id)
-    .populate('vehicle')
-    .populate('customer', 'name phone')
-    .populate('mechanic', 'name phone');
+    .populate("vehicle")
+    .populate("customer", "name phone")
+    .populate("mechanic", "name phone");
 
   if (!request) {
     return res.status(404).json({
       success: false,
-      message: 'Emergency request not found',
+      message: "Emergency request not found",
     });
   }
 
@@ -259,12 +295,12 @@ async function getRequest(req, res) {
     String(request.customer._id) === String(req.user._id) ||
     (request.mechanic &&
       String(request.mechanic._id) === String(req.user._id)) ||
-    req.user.role === 'admin';
+    req.user.role === "admin";
 
   if (!allowed) {
     return res.status(403).json({
       success: false,
-      message: 'Not allowed to view this request',
+      message: "Not allowed to view this request",
     });
   }
 
@@ -274,51 +310,47 @@ async function getRequest(req, res) {
   });
 }
 
-
 // ======================================================
 // ACCEPT REQUEST
 // ======================================================
 
 async function acceptRequest(req, res) {
-  if (req.user.role !== 'mechanic') {
+  if (req.user.role !== "mechanic") {
     return res.status(403).json({
       success: false,
-      message: 'Mechanic account required',
+      message: "Mechanic account required",
     });
   }
 
-  // Mechanic must be online.
   const profile = await MechanicProfile.findOne({
     user: req.user._id,
-  }).select('isOnline isVerified');
+  }).select("isOnline isVerified");
 
   if (!profile?.isOnline) {
     return res.status(403).json({
       success: false,
-      message: 'Go Online before accepting an emergency request.',
+      message: "Go Online before accepting an emergency request.",
     });
   }
 
-  // Mechanic must be verified.
   if (!profile?.isVerified) {
     return res.status(403).json({
       success: false,
       message:
-        'Your mechanic profile must be verified before accepting requests.',
+        "Your mechanic profile must be verified before accepting requests.",
     });
   }
 
-  // IMPORTANT:
-  // Atomic update ensures only ONE mechanic can accept the request.
+  // Atomic update prevents two mechanics accepting the same request.
   const request = await EmergencyRequest.findOneAndUpdate(
     {
       _id: req.params.id,
-      status: 'requested',
+      status: "requested",
       mechanic: null,
     },
     {
       mechanic: req.user._id,
-      status: 'accepted',
+      status: "accepted",
       acceptedAt: new Date(),
     },
     {
@@ -326,67 +358,63 @@ async function acceptRequest(req, res) {
       runValidators: true,
     }
   )
-    .populate('customer', 'name phone')
-    .populate('vehicle');
+    .populate("customer", "name phone")
+    .populate("vehicle");
 
-  // Someone else already accepted it.
   if (!request) {
     return res.status(409).json({
       success: false,
       message:
-        'Request is no longer available. Another mechanic may have accepted it.',
+        "Request is no longer available. Another mechanic may have accepted it.",
     });
   }
 
-  // Notify customer.
   await Notification.create({
     user: request.customer._id,
-    title: 'Mechanic accepted',
-    message: 'A mechanic accepted your emergency request.',
-    type: 'emergency',
+    title: "Mechanic accepted",
+    message: "A mechanic accepted your emergency request.",
+    type: "emergency",
     data: {
       requestId: request._id,
     },
   });
 
-  const io = req.app.get('io');
+  const io = req.app.get("io");
 
-  // Tell all connected clients that this request is no longer available.
-  // Mechanic pages remove it from their available request list.
-  io?.emit('emergency:accepted', {
+  io?.emit("emergency:accepted", {
     requestId: request._id,
   });
 
-  // Full accepted request for the customer if needed later.
   io
     ?.to(`user:${request.customer._id}`)
-    .emit('emergency:accepted:customer', request);
+    .emit("emergency:accepted:customer", request);
 
   return res.json({
     success: true,
-    message: 'Emergency request accepted',
+    message: "Emergency request accepted",
     request,
   });
 }
-
 
 // ======================================================
 // UPDATE REQUEST STATUS
 // ======================================================
 
 async function updateStatus(req, res) {
-  const allowed = [
-    'on_the_way',
-    'arrived',
-    'repairing',
-    'completed',
-    'cancelled',
+  const allowedStatuses = [
+    "on_the_way",
+    "arrived",
+    "repairing",
+    "completed",
+    "cancelled",
   ];
 
-  if (!allowed.includes(req.body.status)) {
+  const newStatus = req.body.status;
+
+  if (!allowedStatuses.includes(newStatus)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid status',
+      message: "Invalid status",
     });
   }
 
@@ -395,35 +423,78 @@ async function updateStatus(req, res) {
   if (!request) {
     return res.status(404).json({
       success: false,
-      message: 'Emergency request not found',
+      message: "Emergency request not found",
     });
   }
 
   if (
     String(request.mechanic) !== String(req.user._id) &&
-    req.user.role !== 'admin'
+    req.user.role !== "admin"
   ) {
     return res.status(403).json({
       success: false,
-      message: 'Only assigned mechanic can update status',
+      message: "Only assigned mechanic can update status",
     });
   }
 
-  request.status = req.body.status;
+  // Record the completion timestamp for job history.
+  if (newStatus === "completed") {
+    if (request.status === "completed") {
+      return res.json({
+        success: true,
+        message: "Job is already completed",
+        request,
+      });
+    }
 
-  if (req.body.finalAmount !== undefined) {
-    request.finalAmount = Number(req.body.finalAmount);
+    if (request.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "A cancelled request cannot be completed",
+      });
+    }
   }
 
-  if (req.body.beforePhotos) {
+  request.status = newStatus;
+
+  // Never trust an arbitrary final amount from the client.
+  // This controller version does not calculate a bill from line items.
+  if (req.body.finalAmount !== undefined) {
+    const finalAmount = Number(req.body.finalAmount);
+
+    if (!Number.isFinite(finalAmount) || finalAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid final amount",
+      });
+    }
+
+    request.finalAmount = finalAmount;
+  }
+
+  if (req.body.beforePhotos !== undefined) {
+    if (!Array.isArray(req.body.beforePhotos)) {
+      return res.status(400).json({
+        success: false,
+        message: "beforePhotos must be an array",
+      });
+    }
+
     request.beforePhotos = req.body.beforePhotos;
   }
 
-  if (req.body.afterPhotos) {
+  if (req.body.afterPhotos !== undefined) {
+    if (!Array.isArray(req.body.afterPhotos)) {
+      return res.status(400).json({
+        success: false,
+        message: "afterPhotos must be an array",
+      });
+    }
+
     request.afterPhotos = req.body.afterPhotos;
   }
 
-  if (req.body.status === 'completed') {
+  if (newStatus === "completed") {
     request.completedAt = new Date();
   }
 
@@ -431,45 +502,46 @@ async function updateStatus(req, res) {
 
   await Notification.create({
     user: request.customer,
-    title: 'Emergency status updated',
-    message: `Your request is now ${request.status.replaceAll(
-      '_',
-      ' '
-    )}`,
-    type: 'emergency',
+    title: "Emergency status updated",
+    message: `Your request is now ${request.status.replaceAll("_", " ")}`,
+    type: "emergency",
     data: {
       requestId: request._id,
       status: request.status,
     },
   });
 
-  // Notify customer request room.
-  req
-    .app
-    .get('io')
-    ?.to(`request:${request._id}`)
-    .emit('emergency:status', {
-      requestId: request._id,
-      status: request.status,
-    });
+  const io = req.app.get("io");
 
-  // Also notify customer's user room.
-  req
-    .app
-    .get('io')
-    ?.to(`user:${request.customer}`)
-    .emit('emergency:status', {
-      requestId: request._id,
-      status: request.status,
-    });
+  const statusPayload = {
+    requestId: request._id,
+    status: request.status,
+  };
+
+  io?.to(`request:${request._id}`).emit(
+    "emergency:status",
+    statusPayload
+  );
+
+  io?.to(`user:${request.customer}`).emit(
+    "emergency:status",
+    statusPayload
+  );
+
+  // Notify the assigned mechanic too, including completion.
+  if (request.mechanic) {
+    io?.to(`user:${request.mechanic}`).emit(
+      "emergency:status",
+      statusPayload
+    );
+  }
 
   return res.json({
     success: true,
-    message: 'Status updated',
+    message: "Status updated successfully",
     request,
   });
 }
-
 
 // ======================================================
 // CANCEL REQUEST
@@ -481,46 +553,41 @@ async function cancelRequest(req, res) {
   if (!request) {
     return res.status(404).json({
       success: false,
-      message: 'Emergency request not found',
+      message: "Emergency request not found",
     });
   }
 
   if (
     String(request.customer) !== String(req.user._id) &&
-    req.user.role !== 'admin'
+    req.user.role !== "admin"
   ) {
     return res.status(403).json({
       success: false,
-      message: 'Not allowed',
+      message: "Not allowed",
     });
   }
 
-  if (['completed', 'cancelled'].includes(request.status)) {
+  if (["completed", "cancelled"].includes(request.status)) {
     return res.status(400).json({
       success: false,
       message: `Cannot cancel a ${request.status} request`,
     });
   }
 
-  request.status = 'cancelled';
+  request.status = "cancelled";
 
   await request.save();
 
-  // Remove cancelled request from mechanics' screens.
-  req
-    .app
-    .get('io')
-    ?.emit('emergency:cancelled', {
-      requestId: request._id,
-    });
+  req.app.get("io")?.emit("emergency:cancelled", {
+    requestId: request._id,
+  });
 
   return res.json({
     success: true,
-    message: 'Emergency request cancelled',
+    message: "Emergency request cancelled",
     request,
   });
 }
-
 
 // ======================================================
 // ADMIN - ALL REQUESTS
@@ -528,9 +595,9 @@ async function cancelRequest(req, res) {
 
 async function listAll(req, res) {
   const requests = await EmergencyRequest.find()
-    .populate('customer', 'name phone')
-    .populate('mechanic', 'name phone')
-    .populate('vehicle')
+    .populate("customer", "name phone")
+    .populate("mechanic", "name phone")
+    .populate("vehicle")
     .sort({ createdAt: -1 });
 
   return res.json({
@@ -540,11 +607,15 @@ async function listAll(req, res) {
   });
 }
 
+// ======================================================
+// EXPORTS
+// ======================================================
 
 module.exports = {
   createEmergency,
   getAvailableRequests,
   getMyRequests,
+  getMyCompletedJobs,
   getRequest,
   acceptRequest,
   updateStatus,

@@ -4,6 +4,7 @@ const {
   createEmergency,
   getAvailableRequests,
   getMyRequests,
+  getMyCompletedJobs,
   getRequest,
   acceptRequest,
   updateStatus,
@@ -18,8 +19,8 @@ const {
 
 const router = express.Router();
 
+// All emergency routes require authentication.
 router.use(protect);
-
 
 // ======================================================
 // CUSTOMER
@@ -37,31 +38,38 @@ router.get(
   getMyRequests
 );
 
-
 // ======================================================
 // MECHANIC
 // ======================================================
 
-// IMPORTANT:
-// This must be before /:id
+// Available emergency requests
 router.get(
   '/available',
   authorize('mechanic'),
   getAvailableRequests
 );
 
+// Completed jobs history
+// Keep this before the /:id route.
+router.get(
+  '/history',
+  authorize('mechanic'),
+  getMyCompletedJobs
+);
+
+// Accept an emergency request
 router.patch(
   '/:id/accept',
   authorize('mechanic'),
   acceptRequest
 );
 
+// Update request status
 router.patch(
   '/:id/status',
   authorize('mechanic', 'admin'),
   updateStatus
 );
-
 
 // ======================================================
 // ADMIN
@@ -73,21 +81,21 @@ router.get(
   listAll
 );
 
-
 // ======================================================
 // COMMON
 // ======================================================
 
+// Get a single emergency request
 router.get(
   '/:id',
   getRequest
 );
 
+// Cancel an emergency request
 router.patch(
   '/:id/cancel',
   authorize('customer', 'admin'),
   cancelRequest
 );
-
 
 module.exports = router;

@@ -244,45 +244,49 @@ async function listMechanics(req, res) {
 
 async function verifyMechanic(req, res) {
   try {
-    // Only admin can verify a mechanic
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: 'Admin access required',
+        message: "Admin access required",
       });
     }
 
     const { id } = req.params;
+    const { isVerified } = req.body;
+
+    if (typeof isVerified !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isVerified must be true or false",
+      });
+    }
 
     const profile = await MechanicProfile.findByIdAndUpdate(
       id,
-      {
-        isVerified: true,
-      },
-      {
-        new: true,
-        runValidators: true,
-      }
-    ).populate('user', 'name email phone role');
+      { $set: { isVerified } },
+      { new: true, runValidators: true }
+    ).populate("user", "name email phone role");
 
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Mechanic profile not found',
+        message: "Mechanic profile not found",
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
-      message: 'Mechanic verified successfully',
+      message: isVerified
+        ? "Mechanic verified successfully"
+        : "Mechanic verification revoked successfully",
       profile,
     });
   } catch (error) {
-    console.error('verifyMechanic error:', error);
+    console.error("verifyMechanic error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to verify mechanic',
+      message: "Failed to update verification status",
     });
   }
 }

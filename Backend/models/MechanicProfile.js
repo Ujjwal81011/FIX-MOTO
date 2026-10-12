@@ -76,6 +76,30 @@ const mechanicProfileSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Subscription is separate from admin identity/document verification.
+    // Existing profiles receive a fresh five-job free trial when this feature launches.
+    freeServicesUsed: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    subscriptionStatus: {
+      type: String,
+      enum: ['free', 'required', 'pending', 'active', 'expired'],
+      default: 'free',
+    },
+
+    subscriptionStartDate: {
+      type: Date,
+      default: null,
+    },
+
+    subscriptionEndDate: {
+      type: Date,
+      default: null,
+    },
+
     verificationDocuments: {
       type: [String],
       default: [],

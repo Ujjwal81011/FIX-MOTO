@@ -1,4 +1,5 @@
 const MechanicProfile = require('../models/MechanicProfile');
+const { canReceiveNewJobs, eligibleMechanicQuery } = require('../utils/subscription');
 
 // Fields a mechanic is allowed to edit through their own profile.
 const EDITABLE_PROFILE_FIELDS = [
@@ -219,13 +220,10 @@ async function getNearbyMechanics(req, res) {
     const mechanics = await MechanicProfile.find({
       isOnline: true,
       isVerified: true,
+      ...eligibleMechanicQuery(),
       location: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [lng, lat],
-          },
-          $maxDistance: maxDistance,
+        $geoWithin: {
+          $centerSphere: [[lng, lat], maxDistance / 6378100],
         },
       },
     })
@@ -255,6 +253,19 @@ async function updateStatus(req, res) {
         success: false,
         message: 'isOnline must be true or false.',
       });
+    }
+
+    if (req.body.isOnline) {
+      const existingProfile = await MechanicProfile.findOne({ user: req.user._id });
+      if (existingProfile && !canReceiveNewJobs(existingProfile)) {
+        return res.status(403).json({
+          success: false,
+          subscriptionRequired: true,
+          message: existingProfile.isVerified
+            ? 'Your free services are used or your subscription has expired. Subscribe for ₹199/month before going online.'
+            : 'Admin verification is required before going online to receive requests.',
+        });
+      }
     }
 
     const profile = await MechanicProfile.findOneAndUpdate(

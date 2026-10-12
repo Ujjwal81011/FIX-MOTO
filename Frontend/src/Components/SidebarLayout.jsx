@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Bell, CarFront, ChevronLeft, ChevronRight, CircleDollarSign, Gauge, History, Home, LogOut, MapPin, Menu, Search, ShieldCheck, Star, UserRound, Users, Wrench, X, Zap } from "lucide-react";
+import { Bell, CarFront, ChevronLeft, ChevronRight, CircleDollarSign, Gauge, History, Home, LogOut, MapPin, Menu, Search, ShieldCheck, Star, UserRound, Users, Wrench, X, Zap, CreditCard } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "./Logo";
 import { initials } from "../utils/helpers";
@@ -15,13 +15,13 @@ const customerLinks = [
 const mechanicLinks = [
   ["Dashboard","/mechanic",Home], ["Emergency Requests","/mechanic/requests",Zap],
   ["Active Jobs","/mechanic/jobs",Wrench], ["Job History","/mechanic/history",History],
-  ["Earnings","/mechanic/earnings",CircleDollarSign], ["Reviews","/mechanic/reviews",Star],
+  ["Earnings","/mechanic/earnings",CircleDollarSign], ["Subscription","/mechanic/subscription",CreditCard], ["Reviews","/mechanic/reviews",Star],
   ["Profile","/mechanic/profile",UserRound]
 ];
 const adminLinks = [
   ["Dashboard","/admin",Gauge], ["Users","/admin/users",Users], ["Mechanics","/admin/mechanics",Wrench],
   ["Verification","/admin/verification",ShieldCheck], ["Emergency Requests","/admin/requests",Zap],
-  ["Payments","/admin/payments",CircleDollarSign], ["Reports","/admin/reports",History]
+  ["Payments","/admin/payments",CircleDollarSign], ["Subscriptions","/admin/subscriptions",CreditCard], ["Reports","/admin/reports",History]
 ];
 
 export default function SidebarLayout({ children }) {

@@ -17,13 +17,14 @@ import JobHistory from "../features/mechanic/JobHistory";
 import Earnings from "../features/mechanic/Earnings";
 import MechanicReviews from "../features/mechanic/Reviews";
 import MechanicProfile from "../features/mechanic/Profile";
+import MechanicSubscription from "../features/mechanic/Subscription";
 import AdminDashboard from "../features/admin/Dashboard";
 import Users from "../features/admin/Users";
 import Mechanics from "../features/admin/Mechanics";
 import Verification from "../features/admin/Verification";
 import AdminRequests from "../features/admin/EmergencyRequests";
-import AdminPayments from "../features/admin/Payments";
 import Reports from "../features/admin/Reports";
+import SubscriptionPayments from "../features/admin/SubscriptionPayments";
 
 export const routes = [
   { path: "/", element: <Landing /> },
@@ -47,12 +48,14 @@ export const routes = [
   { path: "/mechanic/earnings", element: <Earnings />, roles: ["mechanic"] },
   { path: "/mechanic/reviews", element: <MechanicReviews />, roles: ["mechanic"] },
   { path: "/mechanic/profile", element: <MechanicProfile />, roles: ["mechanic"] },
+  { path: "/mechanic/subscription", element: <MechanicSubscription />, roles: ["mechanic"] },
 
   { path: "/admin", element: <AdminDashboard />, roles: ["admin"] },
   { path: "/admin/users", element: <Users />, roles: ["admin"] },
   { path: "/admin/mechanics", element: <Mechanics />, roles: ["admin"] },
   { path: "/admin/verification", element: <Verification />, roles: ["admin"] },
   { path: "/admin/requests", element: <AdminRequests />, roles: ["admin"] },
-  { path: "/admin/payments", element: <AdminPayments />, roles: ["admin"] },
+  { path: "/admin/payments", element: <SubscriptionPayments />, roles: ["admin"] },
+  { path: "/admin/subscriptions", element: <SubscriptionPayments />, roles: ["admin"] },
   { path: "/admin/reports", element: <Reports />, roles: ["admin"] }
 ];

@@ -1,6 +1,7 @@
 const EmergencyRequest = require("../models/EmergencyRequest");
 const MechanicProfile = require("../models/MechanicProfile");
 const Notification = require("../models/Notification");
+const { FREE_SERVICE_LIMIT, canReceiveNewJobs, eligibleMechanicQuery, getSubscriptionState } = require("../utils/subscription");
 
 const EMERGENCY_RADIUS_METERS = 20000;
 
@@ -88,22 +89,25 @@ async function createEmergency(req, res) {
     .populate("vehicle")
     .populate("customer", "name phone");
 
-  // Find nearby online and verified mechanics.
-  const mechanics = await MechanicProfile.find({
-    isOnline: true,
-    isVerified: true,
-    location: {
-      $near: {
-        $geometry: {
-          type: "Point",
-          coordinates: [lng, lat],
+  // Use $geoNear so the 10 mechanics notified are the nearest eligible ones.
+  // Subscription eligibility is included in the geospatial query itself.
+  const mechanics = await MechanicProfile.aggregate([
+    {
+      $geoNear: {
+        near: { type: 'Point', coordinates: [lng, lat] },
+        distanceField: 'distanceMeters',
+        maxDistance: EMERGENCY_RADIUS_METERS,
+        spherical: true,
+        query: {
+          isOnline: true,
+          isVerified: true,
+          ...eligibleMechanicQuery(),
         },
-        $maxDistance: EMERGENCY_RADIUS_METERS,
       },
     },
-  })
-    .limit(10)
-    .select("user");
+    { $limit: 10 },
+    { $project: { user: 1, distanceMeters: 1 } },
+  ]);
 
   if (mechanics.length) {
     await Notification.insertMany(
@@ -149,23 +153,13 @@ async function getAvailableRequests(req, res) {
 
   const profile = await MechanicProfile.findOne({
     user: req.user._id,
-  }).select("isOnline isVerified location");
+  }).select("isOnline isVerified location freeServicesUsed subscriptionStatus subscriptionEndDate");
 
   if (!profile) {
     return res.status(404).json({
       success: false,
       message:
         "Mechanic profile not found. Complete your mechanic profile first.",
-    });
-  }
-
-  if (!profile.isOnline) {
-    return res.json({
-      success: true,
-      count: 0,
-      requests: [],
-      message:
-        "Go Online from your mechanic profile to receive emergency requests.",
     });
   }
 
@@ -176,6 +170,30 @@ async function getAvailableRequests(req, res) {
       requests: [],
       message:
         "Your mechanic profile must be verified by an admin to receive emergency requests.",
+    });
+  }
+
+  const subscriptionState = getSubscriptionState(profile);
+  if (!canReceiveNewJobs(profile)) {
+    return res.json({
+      success: true,
+      count: 0,
+      requests: [],
+      subscriptionRequired: true,
+      subscriptionStatus: subscriptionState,
+      message: subscriptionState === 'pending'
+        ? 'Your ₹199 subscription payment is awaiting Admin acknowledgement.'
+        : 'Your 5 free completed services are used. Subscribe for ₹199/month to receive new emergency requests.',
+    });
+  }
+
+  if (!profile.isOnline) {
+    return res.json({
+      success: true,
+      count: 0,
+      requests: [],
+      message:
+        "Go Online from your mechanic profile to receive emergency requests.",
     });
   }
 
@@ -324,20 +342,28 @@ async function acceptRequest(req, res) {
 
   const profile = await MechanicProfile.findOne({
     user: req.user._id,
-  }).select("isOnline isVerified");
-
-  if (!profile?.isOnline) {
-    return res.status(403).json({
-      success: false,
-      message: "Go Online before accepting an emergency request.",
-    });
-  }
+  }).select("isOnline isVerified freeServicesUsed subscriptionStatus subscriptionEndDate");
 
   if (!profile?.isVerified) {
     return res.status(403).json({
       success: false,
       message:
         "Your mechanic profile must be verified before accepting requests.",
+    });
+  }
+
+  if (!canReceiveNewJobs(profile)) {
+    return res.status(403).json({
+      success: false,
+      subscriptionRequired: true,
+      message: 'Your free services are used or your subscription has expired. Activate a ₹199/month subscription to accept new requests.',
+    });
+  }
+
+  if (!profile?.isOnline) {
+    return res.status(403).json({
+      success: false,
+      message: "Go Online before accepting an emergency request.",
     });
   }
 
@@ -490,6 +516,54 @@ async function updateStatus(req, res) {
   }
 
   await request.save();
+
+  // Count a completed job exactly once. Existing accepted jobs can still finish
+  // even if the subscription expires while the mechanic is working.
+  if (newStatus === "completed") {
+    const completionClaim = await EmergencyRequest.updateOne(
+      {
+        _id: request._id,
+        $or: [
+          { freeServiceCountedAt: { $exists: false } },
+          { freeServiceCountedAt: null },
+        ],
+      },
+      { $set: { freeServiceCountedAt: request.completedAt || new Date() } }
+    );
+
+    if (completionClaim.modifiedCount === 1 && request.mechanic) {
+      const profile = await MechanicProfile.findOneAndUpdate(
+        { user: request.mechanic, $or: [{ freeServicesUsed: { $lt: FREE_SERVICE_LIMIT } }, { freeServicesUsed: { $exists: false } }] },
+        { $inc: { freeServicesUsed: 1 } },
+        { new: true }
+      );
+
+      if (profile && Number(profile.freeServicesUsed || 0) >= FREE_SERVICE_LIMIT) {
+        if (profile.subscriptionStatus !== 'active' || !profile.subscriptionEndDate || new Date(profile.subscriptionEndDate) <= new Date()) {
+          profile.subscriptionStatus = profile.subscriptionStatus === 'pending' ? 'pending' : 'required';
+          profile.isOnline = false;
+          await profile.save();
+        }
+        try {
+          await Notification.create({
+            user: request.mechanic,
+            title: 'Free services completed',
+            message: `You have completed all ${FREE_SERVICE_LIMIT} free services. Subscribe for ₹199/month to receive new emergency requests.`,
+            type: 'payment',
+            data: { freeServicesUsed: profile.freeServicesUsed, subscriptionRequired: true },
+          });
+        } catch (notificationError) {
+          // A notification failure must not make a successfully completed repair look failed.
+          console.error('Free-service limit notification failed:', notificationError.message);
+        }
+        req.app.get('io')?.to(`user:${request.mechanic}`).emit('subscription:updated', {
+          status: profile.subscriptionStatus,
+          freeServicesUsed: profile.freeServicesUsed,
+          freeServicesRemaining: 0,
+        });
+      }
+    }
+  }
 
   await Notification.create({
     user: request.customer,

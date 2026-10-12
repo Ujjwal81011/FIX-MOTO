@@ -32,6 +32,8 @@ const emergencyRequestSchema = new mongoose.Schema({
   priority: { type: String, enum: ['normal', 'emergency'], default: 'emergency' },
   acceptedAt: Date,
   completedAt: Date,
+  // Atomic claim marker so a retried completion cannot consume two free jobs.
+  freeServiceCountedAt: { type: Date, default: undefined },
 }, { timestamps: true });
 
 emergencyRequestSchema.index({ location: '2dsphere' });

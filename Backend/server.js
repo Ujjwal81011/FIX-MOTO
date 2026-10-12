@@ -18,6 +18,8 @@ const userRoutes = require('./routes/userRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const { startSubscriptionExpiryService } = require('./services/subscriptionExpiryService');
 
 const app = express();
 const server = http.createServer(app);
@@ -69,6 +71,7 @@ app.use('/api/emergency', emergencyRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -89,6 +92,7 @@ const PORT = process.env.PORT || 5000;
 async function startServer() {
   try {
     await connectDB();
+    startSubscriptionExpiryService(io);
 
     server.listen(PORT, () => {
       console.log(`FIX MOTO server running on port ${PORT}`);

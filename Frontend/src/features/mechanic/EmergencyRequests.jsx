@@ -18,6 +18,8 @@ export default function EmergencyRequests() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [acceptingId, setAcceptingId] = useState(null);
+  const [subscriptionRequired, setSubscriptionRequired] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState("");
 
 
   // ======================================================
@@ -55,6 +57,8 @@ export default function EmergencyRequests() {
       );
 
       setItems(data.requests || []);
+      setSubscriptionRequired(Boolean(data.subscriptionRequired));
+      setSubscriptionStatus(data.subscriptionStatus || "");
 
       setMessage(data.message || "");
     } catch (error) {
@@ -128,10 +132,16 @@ export default function EmergencyRequests() {
     };
 
 
+    const onSubscriptionUpdated = () => {
+      load();
+    };
+
     socket.on(
       "emergency:new",
       onNew
     );
+
+    socket.on("subscription:updated", onSubscriptionUpdated);
 
     socket.on(
       "emergency:accepted",
@@ -149,6 +159,8 @@ export default function EmergencyRequests() {
         "emergency:new",
         onNew
       );
+
+      socket.off("subscription:updated", onSubscriptionUpdated);
 
       socket.off(
         "emergency:accepted",
@@ -290,6 +302,20 @@ export default function EmergencyRequests() {
       )}
 
 
+      {subscriptionRequired && (
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="text-lg font-black text-amber-900">
+            {subscriptionStatus === "pending" ? "Subscription payment awaiting Admin acknowledgement" : "Your free services are complete"}
+          </h2>
+          <p className="mt-2 text-sm text-amber-800">
+            {subscriptionStatus === "pending"
+              ? "New emergency requests will unlock after Admin confirms receipt of your ₹199 payment."
+              : "You have used your five free completed services. Pay ₹199 for one month and wait for Admin acknowledgement to receive new requests."}
+          </p>
+          <Link to="/mechanic/subscription" className="btn-primary mt-4 inline-flex">Manage subscription</Link>
+        </div>
+      )}
+
       {/* REQUEST LIST */}
 
       <div className="mt-7 space-y-4">
@@ -308,7 +334,7 @@ export default function EmergencyRequests() {
 
           </div>
 
-        ) : items.length ? (
+        ) : items.length && !subscriptionRequired ? (
 
           items.map((item) => (
 

@@ -437,6 +437,11 @@ async function updateStatus(req, res) {
     });
   }
 
+  // A mechanic cannot complete a job until the customer approves the itemized bill.
+  if (newStatus === "completed" && request.billStatus !== "approved") {
+    return res.status(400).json({ success: false, message: "Submit the itemized bill and wait for customer approval before completing this job." });
+  }
+
   // Record the completion timestamp for job history.
   if (newStatus === "completed") {
     if (request.status === "completed") {
@@ -457,20 +462,6 @@ async function updateStatus(req, res) {
 
   request.status = newStatus;
 
-  // Never trust an arbitrary final amount from the client.
-  // This controller version does not calculate a bill from line items.
-  if (req.body.finalAmount !== undefined) {
-    const finalAmount = Number(req.body.finalAmount);
-
-    if (!Number.isFinite(finalAmount) || finalAmount < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid final amount",
-      });
-    }
-
-    request.finalAmount = finalAmount;
-  }
 
   if (req.body.beforePhotos !== undefined) {
     if (!Array.isArray(req.body.beforePhotos)) {
@@ -541,6 +532,91 @@ async function updateStatus(req, res) {
     message: "Status updated successfully",
     request,
   });
+}
+
+// ======================================================
+// MECHANIC SUBMITS AN ITEMIZED BILL
+// ======================================================
+async function submitBill(req, res) {
+  const request = await EmergencyRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ success: false, message: 'Emergency request not found.' });
+  if (String(request.mechanic) !== String(req.user._id)) return res.status(403).json({ success: false, message: 'Only the assigned mechanic can submit this bill.' });
+  if (!['arrived', 'repairing'].includes(request.status)) return res.status(400).json({ success: false, message: 'A bill can only be submitted after the mechanic arrives and while the job is being repaired.' });
+  if (!Array.isArray(req.body.items) || req.body.items.length === 0) return res.status(400).json({ success: false, message: 'Add at least one bill item.' });
+  if (req.body.items.length > 50) return res.status(400).json({ success: false, message: 'A bill can contain at most 50 items.' });
+
+  let grandTotal = 0;
+  const items = [];
+  for (const item of req.body.items) {
+    const name = typeof item.name === 'string' ? item.name.trim() : '';
+    const quantity = Number(item.quantity);
+    const unitPrice = Number(item.unitPrice);
+    if (!name || name.length > 120 || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      return res.status(400).json({ success: false, message: 'Each item needs a name, quantity above zero, and a non-negative unit price.' });
+    }
+    const total = Math.round(quantity * unitPrice * 100) / 100;
+    grandTotal += total;
+    items.push({ name, quantity, unitPrice, total });
+  }
+  grandTotal = Math.round(grandTotal * 100) / 100;
+  if (grandTotal <= 0) return res.status(400).json({ success: false, message: 'Bill total must be greater than zero.' });
+
+  request.billItems = items;
+  request.finalAmount = grandTotal;
+  request.billNotes = typeof req.body.notes === 'string' ? req.body.notes.trim().slice(0, 1000) : '';
+  request.billStatus = 'submitted';
+  request.billVersion = Number(request.billVersion || 0) + 1;
+  request.billSubmittedAt = new Date();
+  request.billApprovedAt = null;
+  request.billApprovedBy = null;
+  request.billRevisionReason = '';
+  await request.save();
+
+  await Notification.create({ user: request.customer, title: 'Repair bill ready', message: `Your mechanic submitted a bill of ₹${grandTotal.toFixed(2)}. Review it before the job is completed.`, type: 'emergency', data: { requestId: request._id } });
+  const io = req.app.get('io');
+  const payload = { requestId: request._id, billStatus: request.billStatus, finalAmount: grandTotal };
+  io?.to(`user:${request.customer}`).emit('emergency:bill', payload);
+  io?.to(`request:${request._id}`).emit('emergency:bill', payload);
+  return res.json({ success: true, message: 'Bill submitted for customer approval.', request });
+}
+
+// ======================================================
+// CUSTOMER APPROVES THE BILL
+// ======================================================
+async function approveBill(req, res) {
+  const request = await EmergencyRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ success: false, message: 'Emergency request not found.' });
+  if (String(request.customer) !== String(req.user._id)) return res.status(403).json({ success: false, message: 'Only the customer who created this request can approve the bill.' });
+  if (request.billStatus !== 'submitted' || !request.billItems?.length || Number(request.finalAmount) <= 0) return res.status(400).json({ success: false, message: 'There is no submitted bill to approve.' });
+  request.billStatus = 'approved';
+  request.billApprovedAt = new Date();
+  request.billApprovedBy = req.user._id;
+  request.billRevisionReason = '';
+  await request.save();
+  await Notification.create({ user: request.mechanic, title: 'Repair bill approved', message: 'The customer approved your bill. You can complete the job when the repair is finished.', type: 'emergency', data: { requestId: request._id } });
+  const io = req.app.get('io');
+  const payload = { requestId: request._id, billStatus: request.billStatus, finalAmount: request.finalAmount };
+  io?.to(`user:${request.mechanic}`).emit('emergency:bill', payload);
+  io?.to(`request:${request._id}`).emit('emergency:bill', payload);
+  return res.json({ success: true, message: 'Bill approved. The mechanic can now complete the job.', request });
+}
+
+// ======================================================
+// CUSTOMER REQUESTS A BILL REVISION
+// ======================================================
+async function requestBillRevision(req, res) {
+  const request = await EmergencyRequest.findById(req.params.id);
+  if (!request) return res.status(404).json({ success: false, message: 'Emergency request not found.' });
+  if (String(request.customer) !== String(req.user._id)) return res.status(403).json({ success: false, message: 'Only the customer who created this request can request a revision.' });
+  if (request.billStatus !== 'submitted') return res.status(400).json({ success: false, message: 'Only a submitted bill can be sent back for revision.' });
+  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+  if (!reason) return res.status(400).json({ success: false, message: 'Please explain what needs to be corrected.' });
+  request.billStatus = 'revision_requested';
+  request.billRevisionReason = reason.slice(0, 500);
+  await request.save();
+  await Notification.create({ user: request.mechanic, title: 'Bill revision requested', message: `Customer requested a bill revision: ${request.billRevisionReason}`, type: 'emergency', data: { requestId: request._id } });
+  req.app.get('io')?.to(`user:${request.mechanic}`).emit('emergency:bill', { requestId: request._id, billStatus: request.billStatus, reason: request.billRevisionReason });
+  return res.json({ success: true, message: 'Revision request sent to the mechanic.', request });
 }
 
 // ======================================================
@@ -619,6 +695,9 @@ module.exports = {
   getRequest,
   acceptRequest,
   updateStatus,
+  submitBill,
+  approveBill,
+  requestBillRevision,
   cancelRequest,
   listAll,
 };

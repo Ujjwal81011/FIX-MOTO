@@ -8,6 +8,9 @@ const {
   getRequest,
   acceptRequest,
   updateStatus,
+  submitBill,
+  approveBill,
+  requestBillRevision,
   cancelRequest,
   listAll,
 } = require('../controllers/emergencyController');
@@ -70,6 +73,11 @@ router.patch(
   authorize('mechanic', 'admin'),
   updateStatus
 );
+
+// Bill flow: mechanic submits; customer approves or requests a revision.
+router.patch('/:id/bill', authorize('mechanic'), submitBill);
+router.patch('/:id/bill/approve', authorize('customer'), approveBill);
+router.patch('/:id/bill/revision', authorize('customer'), requestBillRevision);
 
 // ======================================================
 // ADMIN

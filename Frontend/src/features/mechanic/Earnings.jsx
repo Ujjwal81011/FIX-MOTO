@@ -4,7 +4,6 @@ import {
   CircleDollarSign,
   RefreshCw,
   CheckCircle,
-  XCircle,
   Image as ImageIcon,
 } from "lucide-react";
 import api from "../../utils/axios";
@@ -62,40 +61,13 @@ export default function Earnings() {
     }
   };
 
-  const rejectProof = async (payment) => {
-    const reason = window.prompt(
-      "Enter the reason for rejecting this payment proof:"
-    );
-
-    if (!reason?.trim()) return;
-
-    setBusyId(payment._id);
-    setMessage("");
-
-    try {
-      const { data } = await api.patch(
-        `/payments/${payment._id}/reject`,
-        { reason: reason.trim() }
-      );
-
-      setMessage(data.message || "Payment proof rejected.");
-      await load();
-    } catch (e) {
-      setMessage(
-        e.response?.data?.message || "Could not reject payment proof."
-      );
-    } finally {
-      setBusyId("");
-    }
-  };
 
   const paidTotal = payments
     .filter((p) => p.status === "paid")
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-  const awaiting = payments.filter((p) =>
-    ["pending", "awaiting_confirmation", "proof_rejected"].includes(p.status)
-  );
+  const awaiting = payments.filter((p) => p.status === "awaiting_confirmation");
+  const paidPayments = payments.filter((p) => p.status === "paid");
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -103,7 +75,7 @@ export default function Earnings() {
         <div>
           <h1 className="text-3xl font-black">Earnings & Payments</h1>
           <p className="mt-2 text-slate-500">
-            Review payment proofs and confirm money received.
+            Verify customer transfers or cash received, then confirm the payment.
           </p>
         </div>
 
@@ -128,7 +100,7 @@ export default function Earnings() {
       </div>
 
       <section className="mt-8">
-        <h2 className="text-xl font-bold">Payments requiring attention</h2>
+        <h2 className="text-xl font-bold">Customer payment confirmations</h2>
 
         <div className="mt-4 space-y-4">
           {awaiting.map((payment) => (
@@ -155,6 +127,7 @@ export default function Earnings() {
                 </div>
               </div>
 
+              {payment.method === "upi" && payment.transactionId && <p className="mt-2 text-sm text-slate-500">Customer UTR: {payment.transactionId}</p>}
               {payment.method === "upi" && payment.proofUrl && (
                 <div className="mt-4 rounded-xl border p-4">
                   <p className="mb-3 flex items-center gap-2 font-semibold">
@@ -194,18 +167,10 @@ export default function Earnings() {
                       Confirm Payment Received
                     </button>
 
-                    <button
-                      disabled={busyId === payment._id}
-                      onClick={() => rejectProof(payment)}
-                      className="btn-secondary"
-                    >
-                      <XCircle size={16} />
-                      Reject Proof
-                    </button>
                   </div>
                 )}
 
-              {payment.method === "cash" && payment.status === "pending" && (
+              {payment.method === "cash" && payment.status === "awaiting_confirmation" && (
                 <button
                   disabled={busyId === payment._id}
                   onClick={() => confirmPayment(payment)}
@@ -218,7 +183,7 @@ export default function Earnings() {
 
               {payment.status === "proof_rejected" && (
                 <p className="mt-3 text-sm text-amber-700">
-                  Proof rejected. The customer can upload a corrected screenshot.
+      The customer may need to retry the payment confirmation. Verify the actual receipt before confirming.
                 </p>
               )}
             </div>
@@ -226,9 +191,19 @@ export default function Earnings() {
 
           {awaiting.length === 0 && (
             <div className="card p-6 text-sm text-slate-500">
-              No pending payment confirmations.
+              No customer payment confirmations are waiting.
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-xl font-bold">Confirmed payment history</h2>
+        <div className="mt-4 space-y-3">
+          {paidPayments.map((payment) => <div className="card flex flex-wrap justify-between gap-3 p-5" key={payment._id}>
+            <div><p className="font-bold">{money(payment.amount)} · {payment.method}</p><p className="mt-1 text-sm text-slate-500">Customer: {payment.customer?.name || "Customer"}</p><p className="mt-1 text-xs text-slate-500">Confirmed {payment.paidAt ? new Date(payment.paidAt).toLocaleString() : ""}</p></div><span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">Paid</span>
+          </div>)}
+          {paidPayments.length === 0 && <div className="card p-5 text-sm text-slate-500">No confirmed payments yet.</div>}
         </div>
       </section>
     </div>

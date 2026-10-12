@@ -23,11 +23,25 @@ export default function MyRequests() {
     const refresh = () => load();
     socket.on("emergency:accepted", refresh);
     socket.on("emergency:status", refresh);
+    socket.on("emergency:bill", refresh);
     return () => {
       socket.off("emergency:accepted", refresh);
       socket.off("emergency:status", refresh);
+      socket.off("emergency:bill", refresh);
     };
   }, [socket]);
+
+  const approveBill = async (id) => {
+    try { const { data } = await api.patch(`/emergency/${id}/bill/approve`); setMessage(data.message || "Bill approved."); await load(); }
+    catch (e) { setMessage(e.response?.data?.message || "Could not approve bill."); }
+  };
+
+  const requestRevision = async (id) => {
+    const reason = window.prompt("What needs to be corrected in the bill?");
+    if (!reason?.trim()) return;
+    try { const { data } = await api.patch(`/emergency/${id}/bill/revision`, { reason: reason.trim() }); setMessage(data.message || "Revision requested."); await load(); }
+    catch (e) { setMessage(e.response?.data?.message || "Could not request bill revision."); }
+  };
 
   const cancel = async (id) => {
     try {
@@ -61,6 +75,16 @@ export default function MyRequests() {
               {String(x.status || "requested").replaceAll("_"," ")}
             </span>
           </div>
+          {x.billItems?.length > 0 && <div className="mt-4 rounded-xl border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold">Repair bill</h4><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize">{String(x.billStatus || "none").replaceAll("_", " ")}</span></div>
+            <div className="mt-3 space-y-2">{x.billItems.map((item, i) => <div key={`${x._id}-${i}`} className="flex justify-between gap-3 text-sm"><span>{item.name} × {item.quantity}</span><span>₹{Number(item.total || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span></div>)}</div>
+            {x.billNotes && <p className="mt-3 text-sm text-slate-500">Notes: {x.billNotes}</p>}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="text-lg font-black">Total: ₹{Number(x.finalAmount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</p>
+              {x.billStatus === "submitted" && <div className="flex flex-wrap gap-2"><button onClick={() => approveBill(x._id)} className="btn-primary">Approve bill</button><button onClick={() => requestRevision(x._id)} className="btn-secondary">Request revision</button></div>}
+              {x.billStatus === "revision_requested" && <p className="text-sm text-amber-700">Revision requested: {x.billRevisionReason}</p>}
+              {x.billStatus === "approved" && <p className="text-sm font-semibold text-green-700">Bill approved</p>}
+            </div>
+          </div>}
           <div className="mt-4 flex flex-wrap gap-2">
             {trackable && <Link to={`/customer/tracking?requestId=${x._id}`} className="btn-secondary"><MapPin size={16}/>Track</Link>}
             <Link to={`/customer/tracking?requestId=${x._id}`} className="btn-secondary"><Eye size={16}/>Details</Link>

@@ -1,4 +1,5 @@
 export default function StatCard({ icon: Icon, label, value, note }) {
+  
   return (
     <div className="card p-5">
       <div className="flex items-start justify-between">
